@@ -33,7 +33,7 @@ Rules:
 - No placeholder text. Everything should be real, derived from the code.
 - Use a mix of section types: headings, paragraphs, code blocks, tables, lists, endpoints, card groups."""
 
-LLM_CALL_TIMEOUT = 90
+LLM_CALL_TIMEOUT = 60
 
 
 def _build_file_tree(structure: list[dict]) -> str:
@@ -138,8 +138,6 @@ Complete file tree with symbols:
     )
 
 
-MAX_PAGE_RETRIES = 1
-
 
 async def _generate_page(page_id: str, page_plan: dict, structure: list[dict], doc_type: str, repo_name: str, readme: str) -> tuple[str, dict]:
     symbols_context = _get_symbols_for_page(page_plan, structure)
@@ -153,19 +151,11 @@ Relevant code:
 README excerpt (for context):
 {readme[:1500] if readme else "N/A"}"""
 
-    last_error = None
-    for attempt in range(1 + MAX_PAGE_RETRIES):
-        try:
-            result: DocPage = await asyncio.wait_for(
-                page_llm.ainvoke([SystemMessage(content=PAGE_PROMPT), HumanMessage(content=user_msg)]),
-                timeout=LLM_CALL_TIMEOUT,
-            )
-            return page_id, result.model_dump(exclude_none=True)
-        except Exception as e:
-            last_error = e
-            if attempt < MAX_PAGE_RETRIES:
-                await asyncio.sleep(2)
-    raise last_error
+    result: DocPage = await asyncio.wait_for(
+        page_llm.ainvoke([SystemMessage(content=PAGE_PROMPT), HumanMessage(content=user_msg)]),
+        timeout=LLM_CALL_TIMEOUT,
+    )
+    return page_id, result.model_dump(exclude_none=True)
 
 
 # --- Main entry point ---
@@ -213,7 +203,7 @@ async def generate_docs(
             "navigation": [g.model_dump() for g in plan.navigation],
         })
 
-    sem = asyncio.Semaphore(8)
+    sem = asyncio.Semaphore(5)
     completed = {"count": 0}
 
     async def _generate_page_limited(page_id: str, pp: dict) -> tuple[str, dict]:
