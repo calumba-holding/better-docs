@@ -1,7 +1,7 @@
 import json, asyncio, logging, time
 from langchain_core.messages import SystemMessage, HumanMessage
 from app.llm import get_llm
-from app.models import DocPage, RefineRouter, MetaUpdate
+from app.models import DocPage, RefineRouter, MetaUpdate, NavigationUpdate
 
 log = logging.getLogger("agent")
 
@@ -9,6 +9,7 @@ ROUTER_PROMPT = """You are a documentation routing agent. Given a table of conte
 
 - page_ids: array of page IDs that need content changes
 - include_meta: true if the overall title/description should change
+- include_navigation: true if the user wants to rename tabs, reorder pages, move pages between groups, add new groups, or restructure the navigation in any way
 - strategy: one sentence describing the refinement approach
 
 If the request is vague or applies broadly (e.g. "make it better"), include all page IDs."""
@@ -19,6 +20,14 @@ Apply the refinement and return the COMPLETE updated page. Preserve sections the
 
 REFINE_META_PROMPT = """You are a documentation metadata agent. Update the title and description based on the instruction."""
 
+REFINE_NAV_PROMPT = """You are a documentation navigation agent. You receive the current navigation structure and all available page IDs. Update the navigation based on the user's instruction.
+
+Rules:
+- Every page_id that exists MUST appear in exactly one group (don't drop pages)
+- You can rename groups, reorder pages within groups, move pages between groups, create new groups, or merge groups
+- Page IDs themselves cannot change (they reference existing content)
+- Return the full updated navigation structure"""
+
 
 async def refine_docs(current_docs: dict, prompt: str, repo_name: str) -> dict:
     t0 = time.time()
@@ -26,6 +35,7 @@ async def refine_docs(current_docs: dict, prompt: str, repo_name: str) -> dict:
     router_llm = llm.with_structured_output(RefineRouter)
     meta_llm = llm.with_structured_output(MetaUpdate)
     page_writer_llm = llm.with_structured_output(DocPage)
+    nav_llm = llm.with_structured_output(NavigationUpdate)
 
     pages = current_docs.get("pages", {})
     navigation = current_docs.get("navigation", [])
@@ -55,12 +65,14 @@ User request: {prompt}"""
         )
         target_ids = plan.page_ids
         include_meta = plan.include_meta
+        include_navigation = plan.include_navigation
         strategy = plan.strategy
-        log.info("[refine/router] Strategy: %s | Targets: %s | Meta: %s", strategy, target_ids, include_meta)
+        log.info("[refine/router] Strategy: %s | Targets: %s | Meta: %s | Nav: %s", strategy, target_ids, include_meta, include_navigation)
     except Exception as e:
         log.warning("[refine/router] Failed, refining all pages: %s", e)
         target_ids = list(pages.keys())
         include_meta = False
+        include_navigation = False
         strategy = prompt
 
     updated_docs = {**current_docs, "pages": {**pages}}
@@ -84,7 +96,29 @@ Instruction: {strategy}"""
         except Exception as e:
             log.error("[refine/meta] Failed: %s", e)
 
-    # --- Agent 3 (x N): Page writer agents ---
+    # --- Agent 3: Navigation agent ---
+    async def _refine_navigation() -> None:
+        if not include_navigation:
+            return
+        try:
+            nav_json = json.dumps(navigation, indent=2)
+            all_page_ids = list(pages.keys())
+            nav_msg = f"""Current navigation:
+{nav_json}
+
+All available page IDs: {json.dumps(all_page_ids)}
+
+Instruction: {strategy}"""
+            nav_result: NavigationUpdate = await asyncio.wait_for(
+                nav_llm.ainvoke([SystemMessage(content=REFINE_NAV_PROMPT), HumanMessage(content=nav_msg)]),
+                timeout=30,
+            )
+            updated_docs["navigation"] = [g.model_dump() for g in nav_result.navigation]
+            log.info("[refine/nav] Updated navigation: %d groups", len(nav_result.navigation))
+        except Exception as e:
+            log.error("[refine/nav] Failed, keeping original navigation: %s", e)
+
+    # --- Agent 4 (x N): Page writer agents ---
     async def _refine_one_page(page_id: str) -> tuple[str, dict]:
         """Refine a single page. On failure, returns the original page unchanged."""
         page_data = pages.get(page_id)
@@ -119,13 +153,14 @@ Instruction: {strategy}"""
 
     # --- Run all agents concurrently ---
     page_ids_to_refine = [pid for pid in target_ids if pid in pages]
-    all_tasks: list = [_refine_meta()]
+    all_tasks: list = [_refine_meta(), _refine_navigation()]
     all_tasks.extend([_limited(pid) for pid in page_ids_to_refine])
 
-    log.info("[refine] Launching %d page agents + meta agent", len(page_ids_to_refine))
+    log.info("[refine] Launching %d page agents + meta agent + nav agent", len(page_ids_to_refine))
     results = await asyncio.gather(*all_tasks, return_exceptions=True)
 
-    for result in results[1:]:
+    # results[0] = meta (None), results[1] = nav (None), rest = page tuples
+    for result in results[2:]:
         if isinstance(result, Exception):
             log.error("[refine] Agent failed: %s", result)
             continue

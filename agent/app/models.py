@@ -60,7 +60,12 @@ class RefineRouter(BaseModel):
     """Router agent output for refinement."""
     page_ids: list[str] = Field(description="Page IDs that need content changes")
     include_meta: bool = Field(default=False, description="Whether title/description should change")
+    include_navigation: bool = Field(default=False, description="Whether navigation/tabs should be restructured")
     strategy: str = Field(description="Brief description of what to change")
+
+class NavigationUpdate(BaseModel):
+    """Updated navigation structure from refine nav agent."""
+    navigation: list[NavGroup]
 
 class MetaUpdate(BaseModel):
     """Updated metadata from refine meta agent."""

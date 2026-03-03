@@ -16,7 +16,7 @@ export async function saveDocs(
 ): Promise<{ slug: string }> {
   // Include userId prefix to prevent cross-user slug collisions
   const slug = `${slugify(repoName)}-${userId.slice(0, 8)}`;
-  const docType = docs.doc_type || "auto";
+  const docType = docs.doc_type && docs.doc_type !== "auto" ? docs.doc_type : "devdocs";
 
   await prisma.project.upsert({
     where: { slug },
