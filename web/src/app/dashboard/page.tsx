@@ -228,13 +228,16 @@ export default function DashboardPage() {
         }),
       });
       const data = await res.json();
-      if (data.docs) {
+      if (data.error) {
+        setError(data.error);
+      } else if (data.docs) {
         setDocs(data.docs);
         if (data.slug) setCurrentSlug(data.slug);
         refreshHistory();
       }
     } catch (e) {
       console.error(e);
+      setError(e instanceof Error ? e.message : "Refine failed — try again");
     } finally {
       setRefining(false);
     }

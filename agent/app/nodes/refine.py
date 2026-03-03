@@ -1,7 +1,7 @@
 import json, asyncio, logging, time
 from langchain_core.messages import SystemMessage, HumanMessage
 from app.llm import get_llm
-from app.models import DocPage, RefineRouter, MetaUpdate, ValidationResult
+from app.models import DocPage, RefineRouter, MetaUpdate
 
 log = logging.getLogger("agent")
 
@@ -19,12 +19,6 @@ Apply the refinement and return the COMPLETE updated page. Preserve sections the
 
 REFINE_META_PROMPT = """You are a documentation metadata agent. Update the title and description based on the instruction."""
 
-VALIDATE_PROMPT = """You are a documentation QA agent. Check the page for:
-1. Valid structure with title, description, sections
-2. Each section has a valid type
-3. No placeholder text like TODO or lorem ipsum
-4. Professional language, no emojis"""
-
 
 async def refine_docs(current_docs: dict, prompt: str, repo_name: str) -> dict:
     t0 = time.time()
@@ -32,7 +26,6 @@ async def refine_docs(current_docs: dict, prompt: str, repo_name: str) -> dict:
     router_llm = llm.with_structured_output(RefineRouter)
     meta_llm = llm.with_structured_output(MetaUpdate)
     page_writer_llm = llm.with_structured_output(DocPage)
-    validator_llm = llm.with_structured_output(ValidationResult)
 
     pages = current_docs.get("pages", {})
     navigation = current_docs.get("navigation", [])
@@ -92,10 +85,11 @@ Instruction: {strategy}"""
             log.error("[refine/meta] Failed: %s", e)
 
     # --- Agent 3 (x N): Page writer agents ---
-    async def _refine_one_page(page_id: str) -> tuple[str, dict | None]:
+    async def _refine_one_page(page_id: str) -> tuple[str, dict]:
+        """Refine a single page. On failure, returns the original page unchanged."""
         page_data = pages.get(page_id)
         if not page_data:
-            return page_id, None
+            return page_id, page_data or {}
 
         page_json = json.dumps(page_data, indent=2)
         if len(page_json) > 15000:
@@ -106,49 +100,27 @@ Instruction: {strategy}"""
 
 Instruction: {strategy}"""
 
-        result: DocPage = await asyncio.wait_for(
-            page_writer_llm.ainvoke([SystemMessage(content=REFINE_PAGE_PROMPT), HumanMessage(content=user_msg)]),
-            timeout=90,
-        )
-        return page_id, result.model_dump(exclude_none=True)
-
-    # --- Agent 4: Validator agents ---
-    async def _validate_page(page_id: str, page_data: dict) -> tuple[str, dict, bool]:
         try:
-            check_json = json.dumps(page_data)
-            if len(check_json) > 8000:
-                check_json = check_json[:8000]
-            result: ValidationResult = await asyncio.wait_for(
-                validator_llm.ainvoke([SystemMessage(content=VALIDATE_PROMPT), HumanMessage(content=check_json)]),
-                timeout=20,
+            result: DocPage = await asyncio.wait_for(
+                page_writer_llm.ainvoke([SystemMessage(content=REFINE_PAGE_PROMPT), HumanMessage(content=user_msg)]),
+                timeout=90,
             )
-            if not result.valid:
-                log.warning("[refine/validate] Page '%s' has issues: %s", page_id, result.issues)
-            return page_id, page_data, result.valid
-        except Exception:
-            return page_id, page_data, True
+            log.info("[refine/writer] Page '%s' refined successfully", page_id)
+            return page_id, result.model_dump(exclude_none=True)
+        except Exception as e:
+            log.error("[refine/writer] Page '%s' failed, keeping original: %s", page_id, e)
+            return page_id, page_data
 
     sem = asyncio.Semaphore(6)
 
-    async def _refine_and_validate(page_id: str) -> tuple[str, dict | None]:
+    async def _limited(page_id: str) -> tuple[str, dict]:
         async with sem:
-            try:
-                pid, refined = await _refine_one_page(page_id)
-                if not refined:
-                    return pid, None
-                _, validated_data, is_valid = await _validate_page(pid, refined)
-                if is_valid:
-                    return pid, validated_data
-                log.warning("[refine/validate] Keeping original page '%s' due to validation failure", pid)
-                return pid, pages.get(pid)
-            except Exception as e:
-                log.error("[refine/writer] Page '%s' failed: %s", page_id, e)
-                return page_id, None
+            return await _refine_one_page(page_id)
 
     # --- Run all agents concurrently ---
     page_ids_to_refine = [pid for pid in target_ids if pid in pages]
     all_tasks: list = [_refine_meta()]
-    all_tasks.extend([_refine_and_validate(pid) for pid in page_ids_to_refine])
+    all_tasks.extend([_limited(pid) for pid in page_ids_to_refine])
 
     log.info("[refine] Launching %d page agents + meta agent", len(page_ids_to_refine))
     results = await asyncio.gather(*all_tasks, return_exceptions=True)
