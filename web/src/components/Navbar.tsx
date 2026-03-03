@@ -23,7 +23,7 @@ export default function Navbar() {
         </span>
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-2 md:gap-4">
         <button
           onClick={toggle}
           className="flex items-center justify-center w-8 h-8 rounded-lg cursor-pointer transition-colors"
@@ -36,7 +36,7 @@ export default function Navbar() {
         {session?.user && (
           <>
             <span
-              className="text-xs"
+              className="text-xs hidden md:inline"
               style={{ fontFamily: "var(--font-mono)", color: "var(--color-muted)", letterSpacing: "0.5px" }}
             >
               {session.user.name}
@@ -56,7 +56,7 @@ export default function Navbar() {
               }}
             >
               <IconLogout size={14} />
-              Sign out
+              <span className="hidden sm:inline">Sign out</span>
             </button>
           </>
         )}

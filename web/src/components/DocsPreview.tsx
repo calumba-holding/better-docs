@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { IconExternalLink, IconCopy, IconCheck } from "@tabler/icons-react";
+import { IconExternalLink, IconCopy, IconCheck, IconChevronDown } from "@tabler/icons-react";
 import type { GeneratedDocs } from "@/types";
 import DocsSidebar from "./DocsSidebar";
 import DocsContent from "./DocsContent";
@@ -34,9 +34,9 @@ function getStepLabel(message: string): string {
 export default function DocsPreview({ docs, loading, generating, error, progress = 0, progressMessage = "", slug }: DocsPreviewProps) {
   const [activePage, setActivePage] = useState<string>("");
   const [copied, setCopied] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const liveUrl = slug ? `https://${slug}.better-docs.xyz` : null;
-  const localUrl = slug ? `/docs/${slug}` : null;
 
   const handleCopyUrl = () => {
     if (!liveUrl) return;
@@ -53,7 +53,6 @@ export default function DocsPreview({ docs, loading, generating, error, progress
         style={{ backgroundColor: "var(--bg-secondary)", border: "1px solid var(--color-border)" }}
       >
         <div className="flex flex-col items-center gap-6 w-full max-w-md px-8">
-          {/* Step indicator */}
           <div className="flex flex-col items-center gap-2">
             <p
               className="text-sm tracking-widest uppercase"
@@ -62,14 +61,13 @@ export default function DocsPreview({ docs, loading, generating, error, progress
               {progress < 5 ? "Initializing" : getStepLabel(progressMessage)}
             </p>
             <p
-              className="text-xs"
+              className="text-xs text-center"
               style={{ fontFamily: "var(--font-serif)", color: "var(--color-subtle)" }}
             >
               This may take up to 10 minutes for larger repos
             </p>
           </div>
 
-          {/* Progress bar container */}
           <div className="w-full">
             <div
               className="w-full h-1 rounded-full overflow-hidden"
@@ -85,7 +83,6 @@ export default function DocsPreview({ docs, loading, generating, error, progress
               />
             </div>
 
-            {/* Percentage + message */}
             <div className="flex justify-between items-center mt-3">
               <p
                 className="text-xs"
@@ -110,7 +107,6 @@ export default function DocsPreview({ docs, loading, generating, error, progress
             </div>
           </div>
 
-          {/* Pipeline steps visualization */}
           <div className="flex gap-1 mt-2">
             {["clone", "parse", "classify", "structure", "generate"].map((step, i) => {
               const thresholds = [5, 15, 28, 35, 40];
@@ -132,7 +128,7 @@ export default function DocsPreview({ docs, loading, generating, error, progress
                     }}
                   />
                   <span
-                    className="text-xs"
+                    className="text-xs hidden sm:block"
                     style={{
                       fontFamily: "var(--font-mono)",
                       fontSize: "9px",
@@ -158,7 +154,7 @@ export default function DocsPreview({ docs, loading, generating, error, progress
         className="flex-1 flex items-center justify-center rounded-2xl"
         style={{ backgroundColor: "var(--bg-secondary)", border: "1px solid var(--color-border)" }}
       >
-        <div className="flex flex-col items-center gap-3">
+        <div className="flex flex-col items-center gap-3 px-4">
           {error ? (
             <>
               <p className="text-base" style={{ fontFamily: "var(--font-serif)", color: "#c0392b" }}>
@@ -170,7 +166,7 @@ export default function DocsPreview({ docs, loading, generating, error, progress
             </>
           ) : (
             <>
-              <p className="text-base" style={{ fontFamily: "var(--font-serif)", color: "var(--color-subtle)" }}>
+              <p className="text-base text-center" style={{ fontFamily: "var(--font-serif)", color: "var(--color-subtle)" }}>
                 Select a repository and generate docs
               </p>
               <p className="text-xs" style={{ fontFamily: "var(--font-mono)", color: "var(--color-subtle)", letterSpacing: "0.5px" }}>
@@ -204,6 +200,14 @@ export default function DocsPreview({ docs, loading, generating, error, progress
 
   const totalNavPages = filteredNav.reduce((sum, g) => sum + g.pages.length, 0);
   const loadedPages = Object.keys(docs.pages).length;
+
+  const allPageIds = filteredNav.flatMap((g) => g.pages);
+  const currentPageTitle = currentPageId.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+
+  const handleMobilePageSelect = (pageId: string) => {
+    setActivePage(pageId);
+    setMobileNavOpen(false);
+  };
 
   return (
     <div
@@ -241,19 +245,19 @@ export default function DocsPreview({ docs, loading, generating, error, progress
       {/* Top bar with view/deploy controls */}
       {slug && (
         <div
-          className="flex items-center justify-between px-4 py-2 border-b flex-shrink-0"
+          className="flex items-center justify-between px-3 md:px-4 py-2 border-b flex-shrink-0"
           style={{ borderColor: "var(--color-border)", backgroundColor: "var(--bg-primary)" }}
         >
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
             <span
-              className="text-xs"
+              className="text-xs truncate"
               style={{ fontFamily: "var(--font-mono)", color: "var(--color-subtle)", letterSpacing: "0.5px" }}
             >
               {liveUrl}
             </span>
             <button
               onClick={handleCopyUrl}
-              className="p-1 rounded cursor-pointer border-none bg-transparent transition-colors"
+              className="p-1 rounded cursor-pointer border-none bg-transparent transition-colors flex-shrink-0"
               style={{ color: copied ? "#2a7d4f" : "var(--color-subtle)" }}
               title="Copy URL"
             >
@@ -264,7 +268,7 @@ export default function DocsPreview({ docs, loading, generating, error, progress
             href={liveUrl || "#"}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs no-underline transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs no-underline transition-colors cursor-pointer flex-shrink-0"
             style={{
               fontFamily: "var(--font-mono)",
               color: "var(--bg-primary)",
@@ -272,20 +276,81 @@ export default function DocsPreview({ docs, loading, generating, error, progress
               letterSpacing: "1px",
             }}
           >
-            View Live
+            <span className="hidden sm:inline">View Live</span>
             <IconExternalLink size={12} />
           </a>
         </div>
       )}
 
+      {/* Mobile page selector */}
+      <div className="md:hidden border-b flex-shrink-0 relative" style={{ borderColor: "var(--color-border)" }}>
+        <button
+          onClick={() => setMobileNavOpen(!mobileNavOpen)}
+          className="w-full flex items-center justify-between px-4 py-3 cursor-pointer"
+          style={{ background: "none", border: "none", color: "var(--color-dark)" }}
+        >
+          <span className="text-sm" style={{ fontFamily: "var(--font-sans)", fontWeight: 500 }}>
+            {currentPageTitle}
+          </span>
+          <IconChevronDown
+            size={16}
+            style={{
+              color: "var(--color-muted)",
+              transform: mobileNavOpen ? "rotate(180deg)" : "rotate(0)",
+              transition: "transform 0.2s ease",
+            }}
+          />
+        </button>
+        {mobileNavOpen && (
+          <div
+            className="absolute left-0 right-0 top-full z-30 max-h-64 overflow-y-auto shadow-lg"
+            style={{ backgroundColor: "var(--bg-primary)", borderBottom: "1px solid var(--color-border)" }}
+          >
+            {filteredNav.map((group) => (
+              <div key={group.group}>
+                <p
+                  className="text-xs px-4 py-2"
+                  style={{ fontFamily: "var(--font-mono)", color: "var(--color-subtle)", letterSpacing: "1px", textTransform: "uppercase" }}
+                >
+                  {group.group}
+                </p>
+                {group.pages.map((page) => {
+                  const isLoaded = !!(docs.pages[page] || docs.pages[page.toLowerCase()]);
+                  return (
+                    <button
+                      key={page}
+                      onClick={() => handleMobilePageSelect(page)}
+                      className="w-full text-left px-6 py-2 cursor-pointer"
+                      style={{
+                        fontFamily: "var(--font-sans)",
+                        fontSize: "14px",
+                        background: currentPageId === page ? "var(--color-border)" : "none",
+                        border: "none",
+                        color: isLoaded ? "var(--color-dark)" : "var(--color-subtle)",
+                        opacity: isLoaded ? 1 : 0.6,
+                      }}
+                    >
+                      {page.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Docs content */}
       <div className="flex flex-1 overflow-hidden">
-        <DocsSidebar
-          navigation={filteredNav}
-          activePage={currentPageId}
-          onPageSelect={setActivePage}
-          loadedPages={docs.pages}
-        />
+        {/* Desktop sidebar */}
+        <div className="hidden md:block">
+          <DocsSidebar
+            navigation={filteredNav}
+            activePage={currentPageId}
+            onPageSelect={setActivePage}
+            loadedPages={docs.pages}
+          />
+        </div>
         {pageReady ? (
           <DocsContent page={currentPage} />
         ) : (

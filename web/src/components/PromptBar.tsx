@@ -22,7 +22,7 @@ export default function PromptBar({ onSubmit, loading, disabled }: Props) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex items-center gap-3 px-4 py-3 rounded-2xl"
+      className="flex items-center gap-2 md:gap-3 px-3 md:px-4 py-2 md:py-3 rounded-2xl"
       style={{
         backgroundColor: "var(--bg-card)",
         border: "1px solid var(--color-border)",

@@ -1,13 +1,28 @@
-import asyncio, os, shutil, logging, time
+import asyncio, json, os, shutil, logging, time
 from typing import TypedDict, Optional, Callable
 from langgraph.graph import StateGraph, END
 from app.nodes.clone import clone_repo, get_repo_name
-from app.nodes.parse import parse_repo, classify_repo, query_graph
+from app.nodes.parse import parse_repo, query_graph
 from app.nodes.generate import generate_docs
+from app.llm import get_llm
+from langchain_core.messages import SystemMessage, HumanMessage
 
 log = logging.getLogger("agent")
 
 PageCallback = Optional[Callable[[str, dict], None]]
+
+_classify_llm = get_llm()
+
+CLASSIFY_PROMPT = """You are a documentation type classifier. Given a repository's README and file list, determine what kind of documentation to generate.
+
+Choose exactly ONE doc_type from:
+- "consumer" — end-user facing product/app docs (getting started, features, guides, FAQ)
+- "devdocs" — developer API reference (endpoints, classes, methods, types, error codes)
+- "library" — reusable library/package docs (installation, usage, API, examples)
+- "cli" — command-line tool docs (commands, flags, configuration, examples)
+
+Return ONLY a JSON object:
+{"doc_type": "...", "reasoning": "one sentence explaining why"}"""
 
 class PipelineState(TypedDict):
     repo_url: str
@@ -16,6 +31,7 @@ class PipelineState(TypedDict):
     doc_type: Optional[str]
     github_token: Optional[str]
     index_stats: Optional[dict]
+    file_paths: Optional[list]
     structure: Optional[list]
     classification: Optional[dict]
     readme: Optional[str]
@@ -54,7 +70,7 @@ async def parse_node(state: PipelineState) -> PipelineState:
     try:
         stats = await parse_repo(state["repo_path"], state["repo_name"])
         log.info("[2/5 parse] Done in %.1fs -- %s", time.time()-t, stats)
-        return {**state, "index_stats": stats}
+        return {**state, "index_stats": stats, "file_paths": stats.get("file_paths", [])}
     except Exception as e:
         log.error("[2/5 parse] FAILED: %s", e)
         return {**state, "error": f"Parse failed: {e}"}
@@ -69,12 +85,45 @@ async def classify_node(state: PipelineState) -> PipelineState:
     if state.get("doc_type"):
         log.info("[3/5 classify] Skipped -- user provided doc_type=%s", state["doc_type"])
         return state
-    log.info("[3/5 classify] Auto-classifying %s", state["repo_name"])
+    log.info("[3/5 classify] LLM-classifying %s", state["repo_name"])
     t = time.time()
     try:
-        classification = await classify_repo(state["repo_name"])
-        log.info("[3/5 classify] Done in %.1fs -- %s", time.time()-t, classification)
-        return {**state, "doc_type": classification.get("doc_type", "devdocs"), "classification": classification}
+        file_paths = state.get("file_paths", [])
+        readme = state.get("readme", "")
+        file_tree = "\n".join(file_paths[:500])
+
+        user_msg = f"""Repository: {state["repo_name"]}
+{len(file_paths)} files total.
+
+README (first 3000 chars):
+{readme[:3000] if readme else "No README found."}
+
+File tree:
+{file_tree}
+
+Return the doc_type JSON."""
+
+        response = await _classify_llm.ainvoke([
+            SystemMessage(content=CLASSIFY_PROMPT),
+            HumanMessage(content=user_msg),
+        ])
+        text = response.content.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+        start = text.find("{")
+        end = text.rfind("}") + 1
+        if start >= 0 and end > start:
+            result = json.loads(text[start:end])
+        else:
+            result = json.loads(text)
+
+        doc_type = result.get("doc_type", "devdocs")
+        valid_types = {"consumer", "devdocs", "library", "cli"}
+        if doc_type not in valid_types:
+            doc_type = "devdocs"
+
+        log.info("[3/5 classify] Done in %.1fs -- %s (%s)", time.time()-t, doc_type, result.get("reasoning", ""))
+        return {**state, "doc_type": doc_type, "classification": result}
     except Exception as e:
         log.error("[3/5 classify] FAILED: %s", e)
         return {**state, "doc_type": "devdocs", "classification": {"error": str(e)}}
@@ -147,6 +196,7 @@ async def run_pipeline_streaming(
         "doc_type": doc_type,
         "github_token": github_token,
         "index_stats": None,
+        "file_paths": None,
         "structure": None,
         "classification": None,
         "readme": None,

@@ -94,8 +94,9 @@ async def parse_repo(repo_path: str, repo_name: str) -> dict:
     await asyncio.gather(*[_send(rel, content) for rel, content in files_to_parse])
 
     files_skipped = files_failed
+    file_paths = [rel for rel, _ in files_to_parse]
     log.info("Parsed %d files (%d skipped), %d symbols total", files_sent, files_skipped, total_symbols)
-    return {"files_processed": files_sent, "files_skipped": files_skipped, "nodes_created": total_symbols}
+    return {"files_processed": files_sent, "files_skipped": files_skipped, "nodes_created": total_symbols, "file_paths": file_paths}
 
 
 async def classify_repo(repo_name: str) -> dict:
