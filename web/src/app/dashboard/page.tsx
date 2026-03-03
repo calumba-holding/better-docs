@@ -111,8 +111,6 @@ export default function DashboardPage() {
           const lines = buffer.split("\n");
           buffer = lines.pop() || "";
 
-          let receivedDone = false;
-
           for (const line of lines) {
             if (line.startsWith("event: ")) {
               currentEvent = line.slice(7).trim();
@@ -146,7 +144,6 @@ export default function DashboardPage() {
                       });
                     }
                   } else if (currentEvent === "done") {
-                    receivedDone = true;
                     if (parsed.docs) {
                       setDocs((prev: GeneratedDocs | null) => {
                         if (!prev) return parsed.docs;
@@ -173,7 +170,8 @@ export default function DashboardPage() {
                     if (parsed.repoName) setCurrentRepoName(parsed.repoName);
                   } else if (currentEvent === "error") {
                     setError(parsed.error || "Generation failed");
-                    receivedDone = true;
+                    // Don't break -- let stream close naturally so we receive
+                    // the saved event with the slug for partial docs
                   }
                 } catch {
                   // skip malformed JSON
@@ -183,8 +181,6 @@ export default function DashboardPage() {
               currentData = "";
             }
           }
-
-          if (receivedDone) break;
         }
       } else {
         const data = await res.json();
