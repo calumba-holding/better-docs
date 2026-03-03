@@ -10,6 +10,7 @@ interface DocsPreviewProps {
   docs: GeneratedDocs | null;
   loading?: boolean;
   generating?: boolean;
+  refining?: boolean;
   error?: string | null;
   progress?: number;
   progressMessage?: string;
@@ -31,7 +32,7 @@ function getStepLabel(message: string): string {
   return "Processing";
 }
 
-export default function DocsPreview({ docs, loading, generating, error, progress = 0, progressMessage = "", slug }: DocsPreviewProps) {
+export default function DocsPreview({ docs, loading, generating, refining, error, progress = 0, progressMessage = "", slug }: DocsPreviewProps) {
   const [activePage, setActivePage] = useState<string>("");
   const [copied, setCopied] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -191,17 +192,11 @@ export default function DocsPreview({ docs, loading, generating, error, progress
   const currentPage = findPage(currentPageId);
   const pageReady = !!currentPage;
 
-  const filteredNav = docs.navigation
-    .map((group) => ({
-      ...group,
-      pages: group.pages.map((p) => p),
-    }))
-    .filter((group) => group.pages.length > 0);
+  const filteredNav = docs.navigation.filter((group) => group.pages.length > 0);
 
   const totalNavPages = filteredNav.reduce((sum, g) => sum + g.pages.length, 0);
   const loadedPages = Object.keys(docs.pages).length;
 
-  const allPageIds = filteredNav.flatMap((g) => g.pages);
   const currentPageTitle = currentPageId.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
   const handleMobilePageSelect = (pageId: string) => {
@@ -238,6 +233,27 @@ export default function DocsPreview({ docs, loading, generating, error, progress
             style={{ fontFamily: "var(--font-mono)", color: "var(--color-subtle)", letterSpacing: "0.5px" }}
           >
             {loadedPages}/{totalNavPages} pages &middot; {progress}%
+          </span>
+        </div>
+      )}
+
+      {/* Refining indicator */}
+      {refining && (
+        <div
+          className="flex items-center gap-3 px-4 py-2 border-b flex-shrink-0"
+          style={{ borderColor: "var(--color-border)", backgroundColor: "var(--bg-primary)" }}
+        >
+          <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ backgroundColor: "var(--color-border)" }}>
+            <div
+              className="h-full rounded-full animate-pulse"
+              style={{ width: "100%", backgroundColor: "var(--color-subtle)", opacity: 0.5 }}
+            />
+          </div>
+          <span
+            className="text-xs whitespace-nowrap"
+            style={{ fontFamily: "var(--font-mono)", color: "var(--color-subtle)", letterSpacing: "0.5px" }}
+          >
+            Refining...
           </span>
         </div>
       )}

@@ -3,14 +3,12 @@ from typing import TypedDict, Optional, Callable
 from langgraph.graph import StateGraph, END
 from app.nodes.clone import clone_repo, get_repo_name
 from app.nodes.parse import parse_repo, query_graph
-from app.nodes.generate import generate_docs
+from app.nodes.generate import generate_docs, PageCallback
 from app.llm import get_llm
 from app.models import ClassifyResult
 from langchain_core.messages import SystemMessage, HumanMessage
 
 log = logging.getLogger("agent")
-
-PageCallback = Optional[Callable[[str, dict], None]]
 
 _classify_llm = get_llm().with_structured_output(ClassifyResult)
 

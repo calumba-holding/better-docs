@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { IconLoader2, IconSparkles, IconHistory, IconFileText, IconX, IconMenu2 } from "@tabler/icons-react";
+import { IconSparkles, IconHistory, IconFileText, IconX, IconMenu2 } from "@tabler/icons-react";
 import type { Repo, GeneratedDocs } from "@/types";
 import RepoList from "@/components/RepoList";
 import DocsPreview from "@/components/DocsPreview";
@@ -215,6 +215,7 @@ export default function DashboardPage() {
     const repoName = selectedRepo?.name || currentRepoName;
     if (!docs || !repoName) return;
     setRefining(true);
+    setError(null);
     try {
       const res = await fetch("/api/generate", {
         method: "POST",
@@ -402,7 +403,7 @@ export default function DashboardPage() {
       {/* Main area */}
       <div className="flex-1 flex flex-col p-2 md:p-4 overflow-hidden min-w-0">
         <div className="flex-1 overflow-hidden min-h-0 mb-2 md:mb-4">
-          <DocsPreview docs={docs} loading={generating && !docs} generating={generating} error={error} progress={progress} progressMessage={progressMessage} slug={currentSlug} />
+          <DocsPreview docs={docs} loading={generating && !docs} generating={generating} refining={refining} error={error} progress={progress} progressMessage={progressMessage} slug={currentSlug} />
         </div>
         <div className="flex-shrink-0">
           <PromptBar onSubmit={handleRefine} loading={refining || generating} disabled={!docs} />

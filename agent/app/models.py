@@ -67,11 +67,6 @@ class MetaUpdate(BaseModel):
     title: str
     description: str
 
-class ValidationResult(BaseModel):
-    """QA agent output."""
-    valid: bool
-    issues: list[str] = Field(default_factory=list)
-
 
 # --- API request schemas ---
 
