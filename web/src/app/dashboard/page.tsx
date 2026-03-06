@@ -7,6 +7,8 @@ import RepoList from "@/components/RepoList";
 import DocsPreview from "@/components/DocsPreview";
 import PromptBar from "@/components/PromptBar";
 
+const AGENT_URL = process.env.NEXT_PUBLIC_AGENT_URL || "";
+
 const DOC_TYPES = [
   { value: "auto", label: "Auto-detect" },
   { value: "consumer", label: "Consumer Docs" },
@@ -213,27 +215,49 @@ export default function DashboardPage() {
     setRefining(true);
     setError(null);
     try {
-      const res = await fetch("/api/generate", {
+      // Call agent directly to avoid Vercel function timeout limits
+      const res = await fetch(`${AGENT_URL}/refine`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "refine",
           current_docs: docs,
           prompt,
           repo_name: repoName,
-          repo_url: selectedRepo?.clone_url || "",
         }),
       });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(`Agent error ${res.status}: ${text.slice(0, 200)}`);
+      }
       const data = await res.json();
       if (data.error) {
         setError(data.error);
       } else if (data.docs) {
         setDocs(data.docs);
-        if (data.slug) setCurrentSlug(data.slug);
+        // Persist refined docs via the API route
+        try {
+          const saveRes = await fetch("/api/generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "refine",
+              save_only: true,
+              docs: data.docs,
+              repo_name: repoName,
+              repo_url: selectedRepo?.clone_url || "",
+            }),
+          });
+          const saveData = await saveRes.json().catch(() => ({}));
+          if (saveData.slug) setCurrentSlug(saveData.slug);
+        } catch {
+          // Save failed, but docs are already updated in UI
+        }
         refreshHistory();
+      } else {
+        setError("Refine returned unexpected response");
       }
     } catch (e) {
-      console.error(e);
+      console.error("Refine error:", e);
       setError(e instanceof Error ? e.message : "Refine failed — try again");
     } finally {
       setRefining(false);

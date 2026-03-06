@@ -14,6 +14,19 @@ export async function POST(req: Request) {
     const accessToken = (session as any)?.accessToken as string | undefined;
 
     if (body.action === "refine") {
+      // save_only: client already called the agent directly, just persist
+      if (body.save_only && body.docs) {
+        if (userId && body.repo_name) {
+          try {
+            const { slug } = await saveDocs(userId, body.repo_url || "", body.repo_name, body.docs);
+            return NextResponse.json({ slug });
+          } catch (e) {
+            console.error("Failed to persist refined docs:", e);
+          }
+        }
+        return NextResponse.json({ ok: true });
+      }
+
       const result = await refineDocs(body.current_docs, body.prompt, body.repo_name);
 
       // Persist refined docs if user is logged in
